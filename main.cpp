@@ -33,8 +33,11 @@ public:
         // Set distribution between 0 and 1
         dist_spin = std::uniform_int_distribution<int>(0, 1);
 
-        // Resize the network
-        network.resize(number_sites);    
+        // Resize the network using the given number of sites
+        network.resize(number_sites);
+        
+        // Create the initial configuration of the network
+        initialConfiguration();
     }
 
     // Create a getter for the network
@@ -43,6 +46,19 @@ public:
         return network[index];
     }
 
+    // Create a function to print the network
+    void printNetwork()
+    {
+        std::cout << "Red de Ising (" << side << "x" << side << "):\n";
+        for (int i = 0; i < side; i++) {
+            for (int j = 0; j < side; j++) {
+                // mmapping 2D -> 1D
+                int index = i * side + j;
+                std::cout << getSpin(index) << " ";
+            }
+            std::cout << "\n";
+        }
+        }
     void initialConfiguration()
     {
         // For every site we choose a random number 0 or 1.
@@ -59,10 +75,7 @@ int main()
     int side = 2;
     IsingModel model(side);
 
-    model.initialConfiguration();
-    for(int i = 0; i<4; i++){
-        std::cout << model.getSpin(i) << "\n";
-    }
+    model.printNetwork();
 
     return 0;
 }
