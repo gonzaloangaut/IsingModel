@@ -288,26 +288,26 @@ public:
 int main()
 {
     // Declare the parameters of the simulation
-    int side = 3;
+    int side = 16;
     double J = 1.0;
     double B = 0.0;
     // Set the temperatures range
-    double T_start = 4.0;
-    double T_end = 1.0;
+    double T_start = 2.27;
+    double T_end = 2.27;
     double dT = 0.1;
 
     // Create the network for the fist time to reserve memory
     IsingModel model(side, J, B, T_start);
-    model.printNetwork();
+    // model.printNetwork();
 
     // Get the number of sites
     int number_sites = model.getNumberSites();
 
     // Define the number of montecarlo steps
-    int MCS_termalizacion = 2000;
+    int MCS_termalizacion = 20000;
 
     // Create the name of the file to store the data for thermalization
-    std::string nombre_archivo = "data_thermalization_L=" + std::to_string(side) + ".dat";
+    std::string nombre_archivo = "data_thermalization_L=" + std::to_string(side) + ".csv";
     // Open the file to save the data
     std::ofstream archivo_term(nombre_archivo);
     // Write it
@@ -318,17 +318,17 @@ int main()
     // Open the file to save the data
     std::ofstream archivo_res(nombre_res);
     // Write it
-    archivo_res << "T,Mag_avg,Energy_avg,Susceptibility,Specific_heat\n";
+    archivo_res << "T,Mag_avg,Mag_avg2,Mag_avg4,Energy_avg,Susceptibility,Specific_heat\n";
 
     // We see every temperature
     for (double T = T_start; T >= T_end - 0.001; T -= dT)
     {
-        std::cout << "\n Simulando T = " << T << std::endl;
+        // std::cout << "\n Simulando T = " << T << std::endl;
         // Update the temperature
         model.setTemperature(J, B, T);
         // Reset the inital configuration
         model.initialConfiguration();
-        model.printNetwork();
+        // model.printNetwork();
         
         // Run montecarlo steps until thermalization
         for (int t = 0; t < MCS_termalizacion; t++)
@@ -348,16 +348,16 @@ int main()
             // Save it
             archivo_term << T << "," << t << "," << m << "," << e << "\n";
         }
-        model.printNetwork();
+        // model.printNetwork();
 
         // Now we continue saving data after thermalization
-        int cantidad_medidas = 1000;     // How many configurations we want
+        int number_configurations = 1000;     // How many configurations we want
         int MCS_decorrelacion = 20;      // Time between configurations
 
-        double sum_m = 0.0, sum_m2 = 0.0;
+        double sum_m = 0.0, sum_m2 = 0.0, sum_m4 = 0.0;
         double sum_e = 0.0, sum_e2 = 0.0;
 
-        for (int m = 0; m < cantidad_medidas; m++)
+        for (int m = 0; m < number_configurations; m++)
         {
             // Run the sistems for the time of decorrelation
             for (int skip = 0; skip < MCS_decorrelacion; skip++) {
@@ -374,22 +374,24 @@ int main()
             // Accumulate it
             sum_m  += m_inst;
             sum_m2 += m_inst * m_inst;
+            sum_m4 += m_inst * m_inst * m_inst * m_inst;
             sum_e  += e_inst;
             sum_e2 += e_inst * e_inst;
         }
 
         // Calculate the averages
-        double avg_m  = sum_m / cantidad_medidas;
-        double avg_m2 = sum_m2 / cantidad_medidas;
-        double avg_e  = sum_e / cantidad_medidas;
-        double avg_e2 = sum_e2 / cantidad_medidas;
+        double avg_m  = sum_m / number_configurations;
+        double avg_m2 = sum_m2 / number_configurations;
+        double avg_m4 = sum_m4 / number_configurations;
+        double avg_e  = sum_e / number_configurations;
+        double avg_e2 = sum_e2 / number_configurations;
 
         // Calculate susceptibility and C_V
         double chi = (number_sites / T) * (avg_m2 - (avg_m * avg_m));
         double cv  = (number_sites / (T * T)) * (avg_e2 - (avg_e * avg_e));
 
         // Guardamos los promedios en el archivo de resultados
-        archivo_res << T << "," << avg_m << "," << avg_e << "," << chi << "," << cv << "\n";
+        archivo_res << T << "," << avg_m << "," << avg_m2 << "," << avg_m4 << "," << avg_e << "," << chi << "," << cv << "\n";
         
     }
     // Close the files
