@@ -306,13 +306,19 @@ int main()
     // Define the number of montecarlo steps
     int MCS_termalizacion = 2000;
 
-    // Create the name of the file to store the data
+    // Create the name of the file to store the data for thermalization
     std::string nombre_archivo = "data_thermalization_L=" + std::to_string(side) + ".dat";
-    
     // Open the file to save the data
     std::ofstream archivo_term(nombre_archivo);
     // Write it
     archivo_term << "T,MCS,Mag_per_spin,Energy_per_spin\n";
+
+    // Create the name of the file to store the data for the steady states
+    std::string nombre_res = "results_L=" + std::to_string(side) + ".csv";
+    // Open the file to save the data
+    std::ofstream archivo_res(nombre_res);
+    // Write it
+    archivo_res << "T,Mag_avg,Energy_avg,Susceptibility,Specific_heat\n";
 
     // We see every temperature
     for (double T = T_start; T >= T_end - 0.001; T -= dT)
@@ -344,11 +350,51 @@ int main()
         }
         model.printNetwork();
 
-        // 4. Meassure
-        // ...
+        // Now we continue saving data after thermalization
+        int cantidad_medidas = 1000;     // How many configurations we want
+        int MCS_decorrelacion = 20;      // Time between configurations
+
+        double sum_m = 0.0, sum_m2 = 0.0;
+        double sum_e = 0.0, sum_e2 = 0.0;
+
+        for (int m = 0; m < cantidad_medidas; m++)
+        {
+            // Run the sistems for the time of decorrelation
+            for (int skip = 0; skip < MCS_decorrelacion; skip++) {
+                // Run 1 MCS
+                for (int i = 0; i < number_sites; i++) {
+                    model.metropolisStep();
+                }
+            }
+
+            // Get the instantaneous m and e
+            double m_inst = std::abs(model.getMagnetization()); 
+            double e_inst = model.getEnergy(J, B) / (double)number_sites;
+
+            // Accumulate it
+            sum_m  += m_inst;
+            sum_m2 += m_inst * m_inst;
+            sum_e  += e_inst;
+            sum_e2 += e_inst * e_inst;
+        }
+
+        // Calculate the averages
+        double avg_m  = sum_m / cantidad_medidas;
+        double avg_m2 = sum_m2 / cantidad_medidas;
+        double avg_e  = sum_e / cantidad_medidas;
+        double avg_e2 = sum_e2 / cantidad_medidas;
+
+        // Calculate susceptibility and C_V
+        double chi = (number_sites / T) * (avg_m2 - (avg_m * avg_m));
+        double cv  = (number_sites / (T * T)) * (avg_e2 - (avg_e * avg_e));
+
+        // Guardamos los promedios en el archivo de resultados
+        archivo_res << T << "," << avg_m << "," << avg_e << "," << chi << "," << cv << "\n";
         
     }
+    // Close the files
     archivo_term.close();
+    archivo_res.close();
 
     return 0;
 }
