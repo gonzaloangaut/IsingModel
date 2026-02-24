@@ -3,6 +3,7 @@
 #include <vector>
 #include <array>
 #include <cmath>
+#include <fstream>
 
 class IsingModel
 {
@@ -234,6 +235,54 @@ public:
         // If we arrive to this point, we dont flip
         return false;
     }
+
+    // Create a function to get the magnetization per spin
+    double getMagnetization()
+    {
+        double M = 0;
+        // Sum every value in the network
+        for (int val: network)
+        {
+            M += val;
+        }
+        return M / number_sites;
+        
+    }
+
+    // Create a function to get the energy
+    double getEnergy(double J, double B)
+    {
+        /*
+            The energy is given by the following Hamiltonian:
+            H = -J sum_first_neigh(S_i * S_j) - B sum(S_i)
+            The first term is associated with the energy of interaction, while the second
+            with the magnetic energy.
+        */
+        // Define the energies
+        double energy_interaction = 0.0;
+        double energy_magnetic = 0.0;
+
+        // See every site
+        for (int i = 0; i < number_sites; i++)
+        {
+            int S_i = network[i];
+            
+            // Magnetic term
+            energy_magnetic += S_i;
+
+            // Interaction term
+            int sum_neighbors = 0;
+            for (int n_idx : neighbors[i]) {
+                sum_neighbors += network[n_idx];
+            }
+            // Here we are counting each combination twice: from i and its neighbor
+            // Hence, we are going to divide by 2 (After)
+            energy_interaction += S_i * sum_neighbors;
+        }
+
+        // Divide by 2 for correction
+        return -0.5 * J * energy_interaction - B * energy_magnetic;
+    }
 };
 
 int main()
@@ -254,8 +303,19 @@ int main()
     // Get the number of sites
     int number_sites = model.getNumberSites();
 
+    // Define the number of montecarlo steps
+    int MCS_termalizacion = 2000;
+
+    // Create the name of the file to store the data
+    std::string nombre_archivo = "data_thermalization_L=" + std::to_string(side) + ".dat";
+    
+    // Open the file to save the data
+    std::ofstream archivo_term(nombre_archivo);
+    // Write it
+    archivo_term << "T,MCS,Mag_per_spin,Energy_per_spin\n";
+
     // We see every temperature
-    for (double T = T_start; T >= T_end; T -= dT)
+    for (double T = T_start; T >= T_end - 0.001; T -= dT)
     {
         std::cout << "\n Simulando T = " << T << std::endl;
         // Update the temperature
@@ -264,10 +324,23 @@ int main()
         model.initialConfiguration();
         model.printNetwork();
         
-        // Run metropolis
-        for (int i = 0; i < number_sites * 10; i++)
+        // Run montecarlo steps until thermalization
+        for (int t = 0; t < MCS_termalizacion; t++)
         {
-            model.metropolisStep();
+            // Run metropolis for 1 MCS
+            for (int i = 0; i < number_sites; i++)
+            {
+                model.metropolisStep();
+            }
+
+            // Get the data
+            double m = model.getMagnetization();
+            double E = model.getEnergy(J, B);
+            // Get the energy for spin
+            double e = E / (double)number_sites;
+
+            // Save it
+            archivo_term << T << "," << t << "," << m << "," << e << "\n";
         }
         model.printNetwork();
 
@@ -275,6 +348,7 @@ int main()
         // ...
         
     }
+    archivo_term.close();
 
     return 0;
 }
