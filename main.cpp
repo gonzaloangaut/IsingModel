@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <fstream>
+#include <string>
 
 class IsingModel
 {
@@ -13,6 +14,7 @@ class IsingModel
 private:
     int side;
     int number_sites;
+    double J, B;
     // Random numbers generator
     std::mt19937 rng;
     // For initial spins
@@ -36,6 +38,11 @@ private:
         W[S_new == 1][sum(S_neigh)/2 + 2]
     */
     std::array<std::array<double, 5>, 2> W;
+    // And the same for the energy
+    std::array<std::array<double, 5>, 2> deltaE;
+    // Also we create a variable for the total energy and magnetization
+    double energy;
+    double magnetization;
 public:
     // Create a constructor
     IsingModel(int side, double J, double B, double T)
@@ -56,9 +63,6 @@ public:
         // Resize the network using the given number of sites
         network.resize(number_sites);
 
-        // Create the initial configuration of the network
-        initialConfiguration();
-
         // Resize the neighbors vector given the number of sites
         neighbors.resize(number_sites);
 
@@ -68,37 +72,25 @@ public:
         // Precompute the probabilities
         // This depends on T, so we have to change it if we change T
         precomputeProbabilities(J, B, T);
-    }
 
-    // Create a getter for the number of sites
-    int getNumberSites()
-    {
-        return number_sites;
+        // Create the initial configuration of the network
+        initialConfiguration();
     }
-
-    // Create a function to print the network
-    void printNetwork()
-    {
-        std::cout << "Red de Ising (" << side << "x" << side << "):\n";
-        for (int i = 0; i < side; i++) {
-            for (int j = 0; j < side; j++) {
-                // mmapping 2D -> 1D
-                int index = i * side + j;
-                std::cout << network[index] << " ";
-            }
-            std::cout << "\n";
-        }
-        }
 
     // Create a function to set the initial configuration
     void initialConfiguration()
     {
+        magnetization = 0;
         // For every site we choose a random number 0 or 1.
         // If it is 0 then the site takes value of -1, else of 1.
         for (int i = 0; i < number_sites; i++)
         {
             network[i] = (dist_spin(rng) == 0) ? -1 : 1;
+            // Update the magnetization
+            magnetization += network[i];
         }
+        // Calculate the energy
+        this->energy = calculateFullEnergy(J, B);
     }
 
     // Create a funtion to get the neighbors of each site
@@ -131,7 +123,7 @@ public:
             
         }
     }
-    
+
     // We can calculate the possible probabilities of transition
     void precomputeProbabilities(double J, double B, double T)
     {
@@ -156,8 +148,7 @@ public:
             - If deltaE[i][j] <= 0: deltaW[i][j] = 1
             - If deltaE[i][j] > 0: deltaW[i][j] = e**(-beta * deltaE[i][j])
         */
-        // Create the array of deltaE (OK to be local)
-        std::array<std::array<double, 5>, 2> deltaE;
+        // We use the deltaE and W global
         // Fill it in the case S_new = -1
         deltaE[0][0] = - 8.0 * J + 2.0 * B;
         deltaE[0][1] = - 4.0 * J + 2.0 * B;
@@ -201,7 +192,8 @@ public:
         int idx = dist_index(rng);
 
         // Identify the current state of the site
-        int S_index = network[idx];
+        int s_old = network[idx];
+        int s_new = -s_old;
 
         // Sum the spins of the neighbors
         int sum_neigh = 0;
@@ -213,44 +205,23 @@ public:
         // Now we have to map the case with the matrix W
         // Remember that the element that we need is W[S_new == 1][sum(S_neigh)/2 + 2]
         // The condition in the row is the same as:
-        int row_idx = (S_index == 1) ? 0 : 1; 
-        double prob = W[row_idx][sum_neigh/2 + 2];
+        int row_idx = (s_new == 1) ? 1 : 0; 
+        int col_idx = sum_neigh / 2 + 2;
+        double prob = W[row_idx][col_idx];
+        double updateE = deltaE[row_idx][sum_neigh/2 + 2];
 
-        if (prob >= 1.0)
+        if (dist_prob(rng) < prob)
         {
-            network[idx] *= -1; // Accept and flip the spin
+            network[idx] = s_new;
+            energy += deltaE[row_idx][col_idx];
+            magnetization += 2 * s_new;
             return true;
         }
-        else
-        {
-            // If not, we take a random number between 0 and 1.
-            // If it is < prob, we flip
-            if (dist_prob(rng) < prob)
-            {
-                network[idx] *= -1;
-                return true;
-            }
-        }
-
-        // If we arrive to this point, we dont flip
         return false;
     }
 
-    // Create a function to get the magnetization per spin
-    double getMagnetization()
-    {
-        double M = 0;
-        // Sum every value in the network
-        for (int val: network)
-        {
-            M += val;
-        }
-        return M / number_sites;
-        
-    }
-
-    // Create a function to get the energy
-    double getEnergy(double J, double B)
+    // Create a function to calculate the full energy
+    double calculateFullEnergy(double J, double B)
     {
         /*
             The energy is given by the following Hamiltonian:
@@ -283,6 +254,38 @@ public:
         // Divide by 2 for correction
         return -0.5 * J * energy_interaction - B * energy_magnetic;
     }
+
+    // Create a function to get the magnetization per spin
+    double getMagnetization()
+    {
+        return magnetization / number_sites;   
+    }
+
+    // Create a function to get the energy
+    double getEnergy()
+    {
+        return energy;
+    }
+
+    // Create a getter for the number of sites
+    int getNumberSites()
+    {
+        return number_sites;
+    }
+
+    // // Create a function to print the network
+    // void printNetwork()
+    // {
+    //     std::cout << "Red de Ising (" << side << "x" << side << "):\n";
+    //     for (int i = 0; i < side; i++) {
+    //         for (int j = 0; j < side; j++) {
+    //             // mmapping 2D -> 1D
+    //             int index = i * side + j;
+    //             std::cout << network[index] << " ";
+    //         }
+    //         std::cout << "\n";
+    //     }
+    //     }
 };
 
 int main()
@@ -379,7 +382,7 @@ int main()
             // Get the instantaneous m and e
             double m_inst = model.getMagnetization(); 
             double m_abs = std::abs(m_inst);
-            double e_inst = model.getEnergy(J, B) / (double)number_sites;
+            double e_inst = model.getEnergy() / (double)number_sites;
 
             // Accumulate it
             sum_m  += m_inst;
@@ -399,7 +402,7 @@ int main()
         double avg_e2 = sum_e2 / number_configurations;
 
         // Calculate susceptibility and C_V
-        double chi = (number_sites / T) * (avg_m2 - (avg_m * avg_m));
+        double chi = (number_sites / T) * (avg_m2 - (avg_mabs * avg_mabs));
         double cv  = (number_sites / (T * T)) * (avg_e2 - (avg_e * avg_e));
 
         // Guardamos los promedios en el archivo de resultados
