@@ -301,13 +301,22 @@ int main()
     std::vector<double> T_list;
     
     // High temperature
-    for (double T = 5.0; T >= 2.6; T -= 0.1) T_list.push_back(T);
+    for (double T = 5.0; T >= 2.7; T -= 0.1) T_list.push_back(T);
     
-    // Critic temperature
-    for (double T = 2.58; T >= 2.0 - 0.001; T -= 0.02) T_list.push_back(T);
+    // Getting near
+    for (double T = 2.6; T >= 2.35; T -= 0.05) T_list.push_back(T);
+    
+    // Critical range
+    for (double T = 2.34; T >= 2.29; T -= 0.01) T_list.push_back(T);
+    
+    // Super critical
+    for (double T = 2.288; T >= 2.25; T -= 0.001) T_list.push_back(T);
+    
+    // Exit from critical
+    for (double T = 2.24; T >= 2.20; T -= 0.01) T_list.push_back(T);
     
     // Low temperature
-    for (double T = 1.9; T >= 1.0 - 0.001; T -= 0.1) T_list.push_back(T);
+    for (double T = 2.18; T >= 1.0 - 0.001; T -= 0.1) T_list.push_back(T);
 
     // Create the network for the fist time to reserve memory
     IsingModel model(side, J, B, T_list[0]);
@@ -317,7 +326,7 @@ int main()
     int number_sites = model.getNumberSites();
 
     // Define the number of montecarlo steps
-    int MCS_termalizacion = 10000;
+    int MCS_termalizacion = 1000;
 
     // Create the name of the file to store the data for thermalization
     // std::string nombre_archivo = "data_thermalization_L=" + std::to_string(side) + ".csv";
@@ -339,7 +348,8 @@ int main()
         // Update the temperature
         model.setTemperature(J, B, T);
         // Reset the inital configuration
-        model.initialConfiguration();
+        // (Inherited the previous network)
+        // model.initialConfiguration();
         // model.printNetwork();
         
         // Run montecarlo steps until thermalization
@@ -405,7 +415,7 @@ int main()
         double chi = (number_sites / T) * (avg_m2 - (avg_mabs * avg_mabs));
         double cv  = (number_sites / (T * T)) * (avg_e2 - (avg_e * avg_e));
 
-        // Guardamos los promedios en el archivo de resultados
+        // Save the results
         archivo_res << T << "," << avg_m << "," << avg_m2 << "," << avg_m4 << "," << avg_mabs << "," << avg_e << "," << chi << "," << cv << "\n";
         
     }
