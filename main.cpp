@@ -334,6 +334,44 @@ int main(int argc, char* argv[])
             check.verifyState();
         }
         std::cout << "Consistencia de E y M verificada.\n";
+        // Compare Monte Carlo with exact results for L = 4.
+        for (double T : {1.5, 2.3, 4.0}) {
+
+            IsingModel model(4, 1.0, 0.0, T, seed);
+            int N = model.getNumberSites();
+
+            // Thermalization
+            for (int t = 0; t < 2000; ++t) {
+                for (int i = 0; i < N; ++i)
+                    model.metropolisStep();
+            }
+
+            // Measurements
+            int samples = 30000;
+            double sum_e = 0.0;
+            double sum_abs_m = 0.0;
+            double sum_m2 = 0.0;
+
+            for (int k = 0; k < samples; ++k) {
+
+                // 10 MCS between measurements
+                for (int i = 0; i < 10 * N; ++i)
+                    model.metropolisStep();
+
+                double m = model.getMagnetization();
+                double e = model.getEnergy() / N;
+
+                sum_e += e;
+                sum_abs_m += std::abs(m);
+                sum_m2 += m * m;
+            }
+
+            std::cout << "T = " << T
+                    << " | <e> = " << sum_e / samples
+                    << " | <|m|> = " << sum_abs_m / samples
+                    << " | <m2> = " << sum_m2 / samples
+                    << "\n";
+        }
         return 0;
     }
     // Declare the parameters of the simulation
