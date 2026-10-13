@@ -5,6 +5,8 @@
 #include <cmath>
 #include <fstream>
 #include <string>
+#include <cstdint>
+#include <stdexcept>
 
 class IsingModel
 {
@@ -45,13 +47,17 @@ private:
     double magnetization;
 public:
     // Create a constructor
-    IsingModel(int side, double J, double B, double T)
+    IsingModel(int side, double J, double B, double T, std::uint32_t seed)
     {
+        if (side < 3) {
+            throw std::invalid_argument("L debe ser mayor o igual a 3");
+        }
         this->side = side;
         this->number_sites = side * side;
-        // Initalize RNG
-        std::random_device rd;
-        rng.seed(rd());
+        this->J = J;
+        this->B = B;
+        // Reproducible random seed; pass a different seed for independent runs.
+        rng.seed(seed);
 
         // Set distribution for spins between 0 and 1 (only int)
         dist_spin = std::uniform_int_distribution<int>(0, 1);
@@ -127,6 +133,9 @@ public:
     // We can calculate the possible probabilities of transition
     void precomputeProbabilities(double J, double B, double T)
     {
+        if (T <= 0.0) {
+            throw std::invalid_argument("La temperatura debe ser positiva");
+        }
         /*
             delta_E = - 2*J*S_new*sum(S_neigh) - 2*B*S_new
 
@@ -181,8 +190,12 @@ public:
     }
 
     // Method to set and update T during the simulation
-    void setTemperature(double J, double B, double T) {
-        precomputeProbabilities(J, B, T);
+    void setTemperature(double J_new, double B_new, double T) {
+        // Keep the physical parameters and the energy consistent.
+        this->J = J_new;
+        this->B = B_new;
+        energy = calculateFullEnergy(this->J, this->B);
+        precomputeProbabilities(this->J, this->B, T);
     }
 
     // Create a function that does a metropolis step
@@ -208,7 +221,6 @@ public:
         int row_idx = (s_new == 1) ? 1 : 0; 
         int col_idx = sum_neigh / 2 + 2;
         double prob = W[row_idx][col_idx];
-        double updateE = deltaE[row_idx][sum_neigh/2 + 2];
 
         if (dist_prob(rng) < prob)
         {
@@ -267,6 +279,20 @@ public:
         return energy;
     }
 
+    // Numerical consistency check, deliberately not called at every spin flip.
+    void verifyState()
+    {
+        double check_m = 0.0;
+        for (int s : network) {
+            check_m += s;
+        }
+        double check_energy = calculateFullEnergy(J, B);
+        if (std::abs(check_m - magnetization) > 1e-9 ||
+            std::abs(check_energy - energy) > 1e-8 * number_sites) {
+            throw std::runtime_error("Error: energia o magnetizacion incremental inconsistente");
+        }
+    }
+
     // Create a getter for the number of sites
     int getNumberSites()
     {
@@ -288,8 +314,28 @@ public:
     //     }
 };
 
-int main()
+int main(int argc, char* argv[])
 {
+    // Optional seed as first command-line argument; fixed default for reproducibility.
+    std::uint32_t seed = argc > 1 ? static_cast<std::uint32_t>(std::stoul(argv[1])) : 123456789u;
+    std::cout << "Semilla: " << seed << "\n";
+    // Quick self-test: ./ising_sim 123 --test
+    if (argc > 2 && std::string(argv[2]) == "--test") {
+        IsingModel check(8, 1.0, 0.0, 2.3, seed);
+        check.verifyState();
+        for (int t = 0; t < 100; ++t) {
+            for (int i = 0; i < 8 * 8; ++i) check.metropolisStep();
+            check.verifyState();
+        }
+        check.setTemperature(0.8, 0.2, 2.1); // Also test changes in J and B.
+        check.verifyState();
+        for (int t = 0; t < 100; ++t) {
+            for (int i = 0; i < 8 * 8; ++i) check.metropolisStep();
+            check.verifyState();
+        }
+        std::cout << "Consistencia de E y M verificada.\n";
+        return 0;
+    }
     // Declare the parameters of the simulation
     int side;
     std::cout << "Ingrese el lado: ";
@@ -319,7 +365,8 @@ int main()
     for (double T = 2.18; T >= 1.0 - 0.001; T -= 0.1) T_list.push_back(T);
 
     // Create the network for the fist time to reserve memory
-    IsingModel model(side, J, B, T_list[0]);
+    IsingModel model(side, J, B, T_list[0], seed);
+    model.verifyState();
     // model.printNetwork();
 
     // Get the number of sites
@@ -340,7 +387,7 @@ int main()
     // Open the file to save the data
     std::ofstream archivo_res(nombre_res);
     // Write it
-    archivo_res << "T,Mag_avg,Mag_avg2,Mag_avg4,Mag_abs,Energy_avg,Susceptibility,Specific_heat\n";
+    archivo_res << "T,Mag_avg,Mag_avg2,Mag_avg4,Mag_abs,Energy_avg,Susceptibility,Susceptibility_abs,Specific_heat\n";
     // We see every temperature
     for (double T : T_list)
     {
@@ -372,6 +419,7 @@ int main()
         }
         // model.printNetwork();
 
+        model.verifyState();  // Check incremental updates after thermalization.
         // Now we continue saving data after thermalization
         int number_configurations = 3000;     // How many configurations we want
         int MCS_sample = 50;      // Time between configurations
@@ -403,6 +451,7 @@ int main()
             sum_e2 += e_inst * e_inst;
         }
 
+        model.verifyState();  // Check incremental updates after sampling.
         // Calculate the averages
         double avg_m  = sum_m / number_configurations;
         double avg_m2 = sum_m2 / number_configurations;
@@ -412,11 +461,12 @@ int main()
         double avg_e2 = sum_e2 / number_configurations;
 
         // Calculate susceptibility and C_V
-        double chi = (number_sites / T) * (avg_m2 - (avg_mabs * avg_mabs));
+        double chi = (number_sites / T) * (avg_m2 - avg_m * avg_m);
+        double chi_abs = (number_sites / T) * (avg_m2 - avg_mabs * avg_mabs);
         double cv  = (number_sites / (T * T)) * (avg_e2 - (avg_e * avg_e));
 
         // Save the results
-        archivo_res << T << "," << avg_m << "," << avg_m2 << "," << avg_m4 << "," << avg_mabs << "," << avg_e << "," << chi << "," << cv << "\n";
+        archivo_res << T << "," << avg_m << "," << avg_m2 << "," << avg_m4 << "," << avg_mabs << "," << avg_e << "," << chi << "," << chi_abs << "," << cv << "\n";
         
     }
     // Close the files
