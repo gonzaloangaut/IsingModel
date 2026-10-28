@@ -7,6 +7,9 @@
 #include <string>
 #include <cstdint>
 #include <stdexcept>
+#include <filesystem>
+#include <iomanip>
+#include <sstream>
 
 class IsingModel
 {
@@ -97,6 +100,14 @@ public:
         }
         // Calculate the energy
         this->energy = calculateFullEnergy(J, B);
+    }
+
+    // Ordered initial condition for thermalization tests.
+    void orderedConfiguration()
+    {
+        for (int& s : network) s = 1;
+        magnetization = number_sites;
+        energy = calculateFullEnergy(J, B);
     }
 
     // Create a funtion to get the neighbors of each site
@@ -334,46 +345,57 @@ int main(int argc, char* argv[])
             check.verifyState();
         }
         std::cout << "Consistencia de E y M verificada.\n";
-        // Compare Monte Carlo with exact results for L = 4.
-        for (double T : {1.5, 2.3, 4.0}) {
-
-            IsingModel model(4, 1.0, 0.0, T, seed);
-            int N = model.getNumberSites();
-
-            // Thermalization
-            for (int t = 0; t < 2000; ++t) {
-                for (int i = 0; i < N; ++i)
-                    model.metropolisStep();
-            }
-
-            // Measurements
-            int samples = 30000;
-            double sum_e = 0.0;
-            double sum_abs_m = 0.0;
-            double sum_m2 = 0.0;
-
-            for (int k = 0; k < samples; ++k) {
-
-                // 10 MCS between measurements
-                for (int i = 0; i < 10 * N; ++i)
-                    model.metropolisStep();
-
-                double m = model.getMagnetization();
-                double e = model.getEnergy() / N;
-
-                sum_e += e;
-                sum_abs_m += std::abs(m);
-                sum_m2 += m * m;
-            }
-
-            std::cout << "T = " << T
-                    << " | <e> = " << sum_e / samples
-                    << " | <|m|> = " << sum_abs_m / samples
-                    << " | <m2> = " << sum_m2 / samples
-                    << "\n";
-        }
         return 0;
     }
+    // Preliminary time series for thermalization and autocorrelations.
+    // ./ising_sim <seed> --prelim <L> <T> <random|ordered> <MCS> <save_every>
+    if (argc > 2 && std::string(argv[2]) == "--prelim") {
+        if (argc != 8) {
+            std::cerr << "Uso: ./ising_sim <seed> --prelim <L> <T> <random|ordered> <MCS> <save_every>\n";
+            return 1;
+        }
+        int L = std::stoi(argv[3]);
+        double T = std::stod(argv[4]);
+        std::string initial = argv[5];
+        int total_mcs = std::stoi(argv[6]);
+        int save_every = std::stoi(argv[7]);
+        if (L < 3 || !std::isfinite(T) || T <= 0.0 || total_mcs <= 0 || save_every <= 0 ||
+            (initial != "random" && initial != "ordered")) {
+            std::cerr << "Parametros preliminares invalidos.\n";
+            return 1;
+        }
+
+        IsingModel model(L, 1.0, 0.0, T, seed);
+        if (initial == "ordered") model.orderedConfiguration();
+        model.verifyState();
+        int N = model.getNumberSites();
+
+        std::ostringstream filename;
+        filename << "prelim_L=" << L << "_T=" << std::fixed << std::setprecision(8) << T
+                 << "_init=" << initial << "_seed=" << seed << ".csv";
+        std::filesystem::create_directories("preliminar_data");
+        auto path = std::filesystem::path("preliminar_data") / filename.str();
+        if (std::filesystem::exists(path)) {
+            std::cerr << "El archivo ya existe: " << path << ". Cambia la semilla o guardalo aparte.\n";
+            return 1;
+        }
+        std::ofstream out(path);
+        if (!out) throw std::runtime_error("No se pudo abrir el CSV preliminar");
+        out << std::setprecision(17);
+        out << "MCS,Energy_per_spin,Mag_per_spin\n";
+        auto save = [&](int t) {
+            out << t << "," << model.getEnergy() / N << "," << model.getMagnetization() << "\n";
+        };
+        save(0);  // The initial configuration, before any Monte Carlo attempt.
+        for (int t = 1; t <= total_mcs; ++t) {
+            for (int i = 0; i < N; ++i) model.metropolisStep();
+            if (t % save_every == 0 || t == total_mcs) save(t);
+        }
+        model.verifyState();
+        std::cout << "Datos preliminares guardados en: " << path << "\n";
+        return 0;
+    }
+
     // Declare the parameters of the simulation
     int side;
     std::cout << "Ingrese el lado: ";
