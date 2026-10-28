@@ -396,142 +396,116 @@ int main(int argc, char* argv[])
         return 0;
     }
 
-    // Declare the parameters of the simulation
-    int side;
-    std::cout << "Ingrese el lado: ";
-    std::cin >> side;
-    double J = 1.0;
-    double B = 0.0;
-    // Set the temperatures range
-    // List with variable resolution
-    std::vector<double> T_list;
-    
-    // High temperature
-    for (double T = 5.0; T >= 2.7; T -= 0.1) T_list.push_back(T);
-    
-    // Getting near
-    for (double T = 2.6; T >= 2.35; T -= 0.05) T_list.push_back(T);
-    
-    // Critical range
-    for (double T = 2.34; T >= 2.29; T -= 0.01) T_list.push_back(T);
-    
-    // Super critical
-    for (double T = 2.288; T >= 2.25; T -= 0.001) T_list.push_back(T);
-    
-    // Exit from critical
-    for (double T = 2.24; T >= 2.20; T -= 0.01) T_list.push_back(T);
-    
-    // Low temperature
-    for (double T = 2.18; T >= 1.0 - 0.001; T -= 0.1) T_list.push_back(T);
-
-    // Create the network for the fist time to reserve memory
-    IsingModel model(side, J, B, T_list[0], seed);
-    model.verifyState();
-    // model.printNetwork();
-
-    // Get the number of sites
-    int number_sites = model.getNumberSites();
-
-    // Define the number of montecarlo steps
-    int MCS_termalizacion = 1000;
-
-    // Create the name of the file to store the data for thermalization
-    // std::string nombre_archivo = "data_thermalization_L=" + std::to_string(side) + ".csv";
-    // Open the file to save the data
-    // std::ofstream archivo_term(nombre_archivo);
-    // Write it
-    // archivo_term << "T,MCS,Mag_per_spin,Energy_per_spin\n";
-
-    // Create the name of the file to store the data for the steady states
-    std::string nombre_res = "results_L=" + std::to_string(side) + ".csv";
-    // Open the file to save the data
-    std::ofstream archivo_res(nombre_res);
-    // Write it
-    archivo_res << "T,Mag_avg,Mag_avg2,Mag_avg4,Mag_abs,Energy_avg,Susceptibility,Susceptibility_abs,Specific_heat\n";
-    // We see every temperature
-    for (double T : T_list)
-    {
-        // std::cout << "\n Simulando T = " << T << std::endl;
-        // Update the temperature
-        model.setTemperature(J, B, T);
-        // Reset the inital configuration
-        // (Inherited the previous network)
-        // model.initialConfiguration();
-        // model.printNetwork();
-        
-        // Run montecarlo steps until thermalization
-        for (int t = 0; t < MCS_termalizacion; t++)
-        {
-            // Run metropolis for 1 MCS
-            for (int i = 0; i < number_sites; i++)
-            {
-                model.metropolisStep();
-            }
-
-            // // Get the data
-            // double m = model.getMagnetization();
-            // double E = model.getEnergy(J, B);
-            // // Get the energy for spin
-            // double e = E / (double)number_sites;
-
-            // // Save it
-            // archivo_term << T << "," << t << "," << m << "," << e << "\n";
-        }
-        // model.printNetwork();
-
-        model.verifyState();  // Check incremental updates after thermalization.
-        // Now we continue saving data after thermalization
-        int number_configurations = 3000;     // How many configurations we want
-        int MCS_sample = 50;      // Time between configurations
-
-        double sum_m = 0.0, sum_m2 = 0.0, sum_m4 = 0.0, sum_m_abs = 0.0;
-        double sum_e = 0.0, sum_e2 = 0.0;
-
-        for (int m = 0; m < number_configurations; m++)
-        {
-            // Run the sistems for the time of decorrelation
-            for (int skip = 0; skip < MCS_sample; skip++) {
-                // Run 1 MCS
-                for (int i = 0; i < number_sites; i++) {
-                    model.metropolisStep();
-                }
-            }
-
-            // Get the instantaneous m and e
-            double m_inst = model.getMagnetization(); 
-            double m_abs = std::abs(m_inst);
-            double e_inst = model.getEnergy() / (double)number_sites;
-
-            // Accumulate it
-            sum_m  += m_inst;
-            sum_m2 += m_inst * m_inst;
-            sum_m4 += m_inst * m_inst * m_inst * m_inst;
-            sum_m_abs += m_abs;
-            sum_e  += e_inst;
-            sum_e2 += e_inst * e_inst;
+    // Production run: one (L, T, B, seed) per invocation, random initial state.
+    // Usage:
+    // ./ising_sim <seed> --production <L> <T> <B> <thermalization_MCS>
+    //              <measurement_MCS> <sample_every_MCS> <block_MCS>
+    if (argc > 2 && std::string(argv[2]) == "--production") {
+        if (argc != 10) {
+            std::cerr << "Uso: ./ising_sim <seed> --production <L> <T> <B> "
+                         "<thermalization_MCS> <measurement_MCS> <sample_every_MCS> <block_MCS>\n";
+            return 1;
         }
 
-        model.verifyState();  // Check incremental updates after sampling.
-        // Calculate the averages
-        double avg_m  = sum_m / number_configurations;
-        double avg_m2 = sum_m2 / number_configurations;
-        double avg_m4 = sum_m4 / number_configurations;
-        double avg_mabs = sum_m_abs / number_configurations;
-        double avg_e  = sum_e / number_configurations;
-        double avg_e2 = sum_e2 / number_configurations;
+        int L = std::stoi(argv[3]);
+        double T = std::stod(argv[4]);
+        double B = std::stod(argv[5]);
+        std::int64_t thermalization_mcs = std::stoll(argv[6]);
+        std::int64_t measurement_mcs = std::stoll(argv[7]);
+        std::int64_t sample_every = std::stoll(argv[8]);
+        std::int64_t block_mcs = std::stoll(argv[9]);
+        const double J = 1.0;
 
-        // Calculate susceptibility and C_V
-        double chi = (number_sites / T) * (avg_m2 - avg_m * avg_m);
-        double chi_abs = (number_sites / T) * (avg_m2 - avg_mabs * avg_mabs);
-        double cv  = (number_sites / (T * T)) * (avg_e2 - (avg_e * avg_e));
+        if (L < 3 || !std::isfinite(T) || T <= 0.0 || !std::isfinite(B) ||
+            thermalization_mcs < 0 || measurement_mcs <= 0 ||
+            sample_every <= 0 || block_mcs < sample_every ||
+            block_mcs % sample_every != 0 || measurement_mcs % block_mcs != 0 ||
+            measurement_mcs / block_mcs < 4) {
+            std::cerr << "Parametros invalidos: se requieren >=4 bloques completos; "
+                         "block_MCS debe ser multiplo de sample_every_MCS y dividir measurement_MCS.\n";
+            return 1;
+        }
 
-        // Save the results
-        archivo_res << T << "," << avg_m << "," << avg_m2 << "," << avg_m4 << "," << avg_mabs << "," << avg_e << "," << chi << "," << chi_abs << "," << cv << "\n";
-        
+        std::ostringstream filename;
+        filename << "blocks_L=" << L << "_T=" << std::fixed << std::setprecision(8) << T
+                 << "_B=" << B << "_seed=" << seed << ".csv";
+        std::filesystem::create_directories("data/production");
+        auto path = std::filesystem::path("data/production") / filename.str();
+        if (std::filesystem::exists(path)) {
+            std::cerr << "El archivo ya existe: " << path << ". Usa otra semilla o renombra el archivo.\n";
+            return 1;
+        }
+
+        IsingModel model(L, J, B, T, seed);
+        model.verifyState();
+        const int N = model.getNumberSites();
+        for (std::int64_t t = 0; t < thermalization_mcs; ++t) {
+            for (int i = 0; i < N; ++i) model.metropolisStep();
+        }
+        model.verifyState();
+        std::cout << "Termalizacion completada: " << thermalization_mcs << " MCS\n";
+
+        std::ofstream out(path);
+        if (!out) throw std::runtime_error("No se pudo abrir el CSV de produccion");
+        out << std::setprecision(17);
+        out << "block,L,T,J,B,seed,thermalization_mcs,measurement_mcs,"
+               "sample_every_mcs,block_mcs,samples,m,m_abs,m2,m4,e,e2\n";
+
+        // Means of the sufficient moments in each time block.
+        long double sum_m = 0.0L, sum_abs_m = 0.0L, sum_m2 = 0.0L, sum_m4 = 0.0L;
+        long double sum_e = 0.0L, sum_e2 = 0.0L;
+        std::int64_t samples = 0;
+        const std::int64_t n_blocks = measurement_mcs / block_mcs;
+
+        for (std::int64_t t = 1; t <= measurement_mcs; ++t) {
+            for (int i = 0; i < N; ++i) model.metropolisStep();
+
+            if (t % sample_every == 0) {
+                double m = model.getMagnetization();
+                double e = model.getEnergy() / N;
+                sum_m += m;
+                sum_abs_m += std::abs(m);
+                sum_m2 += m * m;
+                sum_m4 += (m * m) * (m * m);
+                sum_e += e;
+                sum_e2 += e * e;
+                ++samples;
+            }
+
+            if (t % block_mcs == 0) {
+                const std::int64_t block = t / block_mcs;
+                if (samples != block_mcs / sample_every)
+                    throw std::runtime_error("Cantidad inesperada de mediciones por bloque");
+
+                // Each record contains means WITHIN the block, not raw sums.
+                out << block << "," << L << "," << T << "," << J << "," << B << ","
+                    << seed << "," << thermalization_mcs << "," << measurement_mcs << ","
+                    << sample_every << "," << block_mcs << "," << samples << ","
+                    << static_cast<double>(sum_m / samples) << ","
+                    << static_cast<double>(sum_abs_m / samples) << ","
+                    << static_cast<double>(sum_m2 / samples) << ","
+                    << static_cast<double>(sum_m4 / samples) << ","
+                    << static_cast<double>(sum_e / samples) << ","
+                    << static_cast<double>(sum_e2 / samples) << "\n";
+
+                sum_m = sum_abs_m = sum_m2 = sum_m4 = 0.0L;
+                sum_e = sum_e2 = 0.0L;
+                samples = 0;
+                if (block == 1 || block % 5 == 0 || block == n_blocks)
+                    std::cout << "Bloque " << block << "/" << n_blocks << " completado\n";
+            }
+        }
+        model.verifyState();
+        out.close();
+        if (!out) throw std::runtime_error("Error al guardar el CSV de produccion");
+        std::cout << "Datos por bloques guardados en: " << path << "\n";
+        return 0;
     }
-    // Close the files
-    // archivo_term.close();
-    archivo_res.close();
 
-    return 0;
+    std::cerr << "Uso:\n"
+              << "  ./ising_sim <seed> --test\n"
+              << "  ./ising_sim <seed> --prelim <L> <T> <random|ordered> <MCS> <save_every>\n"
+              << "  ./ising_sim <seed> --production <L> <T> <B> <thermalization_MCS> "
+                 "<measurement_MCS> <sample_every_MCS> <block_MCS>\n";
+    return 1;
 }

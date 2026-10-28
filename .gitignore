@@ -1,0 +1,10 @@
+# Ejecutables y compilación
+ising_sim
+*.o
+
+# Python y Jupyter
+__pycache__/
+.ipynb_checkpoints/
+
+# Respaldos
+*.bak
